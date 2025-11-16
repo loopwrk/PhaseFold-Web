@@ -8,8 +8,8 @@
 </template>
 
 <script setup lang="ts">
-const colorMode = useColorMode();
 import { useFavicon } from "@vueuse/core";
+const colorMode = useColorMode();
 
 const icon = useFavicon();
 

@@ -20,9 +20,6 @@
     <main id="content" class="flex-1">
       <UContainer class="py-8">
         <div class="grid gap-8 md:grid-cols-[16rem_minmax(0,1fr)]">
-          <aside class="self-start md:sticky md:top-24">
-
-          </aside>
           <section class="min-w-0">
             <NuxtPage />
           </section>
