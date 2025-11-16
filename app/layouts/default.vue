@@ -8,7 +8,7 @@
         <div
           class="header-content mx-auto flex w-full max-w-7xl flex-row items-start justify-between py-3 pr-4 md:items-center">
           <NuxtLink to="/" class="logo rounded-lg px-2 text-2xl font-semibold focus:ring focus:outline-none sm:px-4">
-            AccessLab
+            PhaseFold
           </NuxtLink>
           <div class="flex flex-col gap-4 sm:flex-row">
             <ColorModeToggle />
