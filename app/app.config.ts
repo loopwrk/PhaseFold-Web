@@ -8,5 +8,10 @@ export default defineAppConfig({
         close: "cursor-pointer mt-2.5",
       },
     },
+    button: {
+      slots: {
+        base: "mr-4",
+      },
+    },
   },
 });
