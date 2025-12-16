@@ -10,7 +10,7 @@ export default defineAppConfig({
     },
     button: {
       slots: {
-        base: "mr-4",
+        base: "mr-4 cursor-pointer",
       },
     },
   },

@@ -1,31 +1,83 @@
 import * as Tone from "tone";
+import { durations } from "~/constants/music";
 
 const loops: Tone.Loop[] = [];
 const synths: (Tone.Synth | Tone.FMSynth | Tone.AMSynth)[] = [];
+const parts: Tone.Part[] = [];
 
 export function usePlayAudio() {
   let synth: Tone.Synth | null = null;
   const timeContext = ref<number>(0);
   let timeInterval: number | null = null;
+  const currentlyPlaying = ref<Boolean>(false);
+  const currentPlayingNote = ref<string | null>(null);
+  const currentPlayingIndex = ref<number | null>(null);
 
   const init = async () => {
     await Tone.start();
     if (!synth) synth = new Tone.Synth().toDestination();
   };
 
-  const singleNote = async () => {
+  const singleNote = async (note: string) => {
     await init();
     const now = Tone.now();
-    synth?.triggerAttack("C4", now);
+    synth?.triggerAttack(note, now);
     synth?.triggerRelease(now + 1);
   };
 
-  const multipleNotes = async () => {
+  const multipleNotes = async (
+    noteSequence: Array<string> = ["C4", "C4", "G4", "G4", "A4", "A4", "G4"],
+    restTime: number = 0.5
+  ) => {
     await init();
-    const now = Tone.now();
-    synth?.triggerAttackRelease("C4", "8n", now);
-    synth?.triggerAttackRelease("E4", "8n", now + 0.5);
-    synth?.triggerAttackRelease("G4", "8n", now + 1);
+
+    parts.forEach((part) => part.dispose());
+    parts.length = 0;
+
+    const events = noteSequence.map((note, index) => [
+      index * restTime,
+      { note, index },
+    ]);
+
+    // Create a Part for the note sequence
+    const part = new Tone.Part((time, value) => {
+      const { note, index } = value as { note: string; index: number };
+
+      synth?.triggerAttackRelease(note, durations.eighth, time);
+
+      Tone.getDraw().schedule(() => {
+        currentPlayingNote.value = note;
+        currentPlayingIndex.value = index;
+      }, time);
+
+      Tone.getDraw().schedule(
+        () => {
+          currentPlayingNote.value = null;
+          currentPlayingIndex.value = null;
+        },
+        time + Tone.Time(durations.eighth).toSeconds()
+      );
+    }, events);
+
+    parts.push(part);
+
+    part.start(0);
+    part.stop(noteSequence.length * restTime);
+
+    Tone.getTransport().start();
+    currentlyPlaying.value = true;
+
+    // Stop transport and cleanup after sequence completes
+    setTimeout(
+      () => {
+        Tone.getTransport().stop();
+        part.dispose();
+        currentlyPlaying.value = false;
+        const index = parts.indexOf(part);
+        if (index > -1) parts.splice(index, 1);
+      },
+      (noteSequence.length * restTime + 1) * 1000
+    );
   };
 
   const startScheduled = async () => {
@@ -38,12 +90,12 @@ export function usePlayAudio() {
 
     //play a note every quarter-note
     const loopA = new Tone.Loop((time) => {
-      synthA.triggerAttackRelease("C2", "8n", time);
-    }, "4n").start(0);
+      synthA.triggerAttackRelease("C2", durations.eighth, time);
+    }, durations.quarter).start(0);
 
     const loopB = new Tone.Loop((time) => {
-      synthB.triggerAttackRelease("C4", "8n", time);
-    }, "4n").start("8n");
+      synthB.triggerAttackRelease("C4", durations.eighth, time);
+    }, durations.quarter).start(durations.eighth);
 
     loops.push(loopA, loopB);
 
@@ -77,11 +129,14 @@ export function usePlayAudio() {
   };
 
   return {
-    stopScheduled,
+    currentlyPlaying,
     singleNote,
     multipleNotes,
     startScheduled,
+    stopScheduled,
     timeContext,
+    currentPlayingNote,
+    currentPlayingIndex,
     startTimeContext,
     stopTimeContext,
   };
