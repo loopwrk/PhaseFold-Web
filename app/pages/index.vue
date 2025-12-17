@@ -62,15 +62,23 @@ definePageMeta({
           </UButton>
         </div>
         <div
-          class="selected-notes flex flex-wrap items-center border-accessible-blue w-full rounded-md border-1 px-5 py-2 gap-2">
-          <UButton v-for="(noteItem, index) in noteSequence" :key="index" class="text-amber-100"
-            :class="['w-10 justify-center', play.currentPlayingIndex.value === index ? 'liquid-wheel' : '']" size="md"
-            color="primary" @click="removeNoteFromSequence(index)">{{ noteItem.replace('4', '') }}
-          </UButton>
+          class="selected-notes flex flex-wrap items-center border-accessible-blue w-full rounded-md border-1 py-3 px-5 gap-2">
+          <div v-for="(noteItem, index) in noteSequence" :key="index" class="removable-note group relative">
+            <UButton class="text-amber-100 cursor-pointer transition-all duration-150"
+              :class="['w-10 justify-center', play.currentPlayingIndex.value === index ? 'liquid-wheel' : 'group-hover:ring-3 group-hover:ring-black group-hover:scale-95']"
+              size="md" color="primary" @click="removeNoteFromSequence(index)">
+              {{ noteItem.replace('4', '') }}
+            </UButton>
+            <div
+              class="absolute -translate-x-2 -top-2 -right-0.5 size-5 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+              @click.stop="removeNoteFromSequence(index)">
+              <UIcon name="mingcute-close-circle-fill" class="size-5 text-black font-extrabold stroke-8" />
+            </div>
+          </div>
           <UButton variant="ghost" size="sm" icon="i-heroicons-arrow-path" @click="resetNoteSequence" class="ml-2"
             aria-label="Reset sequence" />
-          <UButton class="-translate-x-6" variant="ghost" size="sm" icon="i-heroicons-x-mark" @click="clearNoteSequence"
-            aria-label="Clear sequence" />
+          <UButton v-if="noteSequence.length > 0" class="-translate-x-6" variant="ghost" size="sm"
+            icon="i-heroicons-x-mark" @click="clearNoteSequence" aria-label="Clear sequence" />
         </div>
       </fieldset>
     </div>
