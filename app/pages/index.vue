@@ -14,6 +14,14 @@ const removeNoteFromSequence = (index: number) => {
   noteSequence.value.splice(index, 1);
 }
 
+const resetNoteSequence = () => {
+  noteSequence.value = ["C4", "C4", "G4", "G4", "A4", "A4", "G4"];
+}
+
+const clearNoteSequence = () => {
+  noteSequence.value = [];
+}
+
 const showSection = ref(true)
 
 onUnmounted(() => {
@@ -53,11 +61,16 @@ definePageMeta({
             {{ note.replace('4', '') }}
           </UButton>
         </div>
-        <div class="selected-notes flex flex-wrap border-accessible-blue w-full rounded-md border-1 px-5 py-2 gap-2">
+        <div
+          class="selected-notes flex flex-wrap items-center border-accessible-blue w-full rounded-md border-1 px-5 py-2 gap-2">
           <UButton v-for="(noteItem, index) in noteSequence" :key="index" class="text-amber-100"
             :class="['w-10 justify-center', play.currentPlayingIndex.value === index ? 'liquid-wheel' : '']" size="md"
             color="primary" @click="removeNoteFromSequence(index)">{{ noteItem.replace('4', '') }}
           </UButton>
+          <UButton variant="ghost" size="sm" icon="i-heroicons-arrow-path" @click="resetNoteSequence" class="ml-2"
+            aria-label="Reset sequence" />
+          <UButton class="-translate-x-6" variant="ghost" size="sm" icon="i-heroicons-x-mark" @click="clearNoteSequence"
+            aria-label="Clear sequence" />
         </div>
       </fieldset>
     </div>
