@@ -29,7 +29,7 @@ definePageMeta({
 <template>
   <div>
     <div class="flex mb-16">
-      <PlayStopButton @click="play.singleNote(selectedNote)" />
+      <PlayStopButton @click="play.singleNote(selectedNote)" :animate-on-play="false" />
       <fieldset class="note-group" role="group">
         <legend id="play-single-note">Play single note</legend>
         <div class="flex flex-wrap gap-2" aria-labelledby="play-single-note">
