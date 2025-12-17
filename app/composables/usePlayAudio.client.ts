@@ -5,14 +5,14 @@ const loops: Tone.Loop[] = [];
 const synths: (Tone.Synth | Tone.FMSynth | Tone.AMSynth)[] = [];
 const parts: Tone.Part[] = [];
 
-export function usePlayAudio() {
-  let synth: Tone.Synth | null = null;
-  const timeContext = ref<number>(0);
-  let timeInterval: number | null = null;
-  const currentlyPlaying = ref<Boolean>(false);
-  const currentPlayingNote = ref<string | null>(null);
-  const currentPlayingIndex = ref<number | null>(null);
+let synth: Tone.Synth | null = null;
+const timeContext = ref<number>(0);
+let timeInterval: number | null = null;
+const currentlyPlaying = ref<boolean>(false);
+const currentPlayingNote = ref<string | null>(null);
+const currentPlayingIndex = ref<number | null>(null);
 
+export function usePlayAudio() {
   const init = async () => {
     await Tone.start();
     if (!synth) synth = new Tone.Synth().toDestination();
@@ -83,7 +83,6 @@ export function usePlayAudio() {
   const startScheduled = async () => {
     await init();
 
-    // create two monophonic synths
     const synthA = new Tone.FMSynth().toDestination();
     const synthB = new Tone.AMSynth().toDestination();
     synths.push(synthA, synthB);
