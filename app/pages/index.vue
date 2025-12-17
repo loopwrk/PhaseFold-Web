@@ -1,7 +1,6 @@
 <script setup lang="ts">
 
 const play = usePlayAudio();
-
 const selectedNote = ref("C4");
 const simpleSynthNotes = ["C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4", "A#4", "B4"];
 const noteSequence = ref(["C4", "C4", "G4", "G4", "A4", "A4", "G4"])
@@ -49,30 +48,36 @@ definePageMeta({
         </div>
       </fieldset>
     </div>
-
     <div class="flex mb-16">
       <PlayStopButton @click="play.multipleNotes(noteSequence)" />
       <fieldset class="note-group w-full" role="group">
         <legend id="play-note-sequence">Play note sequence</legend>
         <div class="note-options flex flex-wrap gap-2 mb-4">
-          <UButton v-for="note in simpleSynthNotes" :key="note" variant="outline"
-            class="w-10 justify-center hover:bg-primary/100 hover:text-amber-100" size="md"
-            @click="addNoteToSequence(note)" color="primary">
-            {{ note.replace('4', '') }}
-          </UButton>
+          <div v-for="note in simpleSynthNotes" :key="note" class="addable-note group relative">
+            <UButton variant="outline"
+              class="w-10 justify-center cursor-pointer transition-all duration-150 group-hover:ring-1 group-hover:ring-primary group-hover:scale-105"
+              size="md" @click="addNoteToSequence(note)" color="primary">
+              {{ note.replace('4', '') }}
+            </UButton>
+            <div
+              class="absolute -translate-x-2 -top-2 -right-0.5 size-5 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+              @click.stop="addNoteToSequence(note)">
+              <UIcon name="mingcute-add-circle-fill" class="size-5 text-primary font-extrabold stroke-8" />
+            </div>
+          </div>
         </div>
         <div
           class="selected-notes flex flex-wrap items-center border-accessible-blue w-full rounded-md border-1 py-3 px-5 gap-2">
           <div v-for="(noteItem, index) in noteSequence" :key="index" class="removable-note group relative">
             <UButton class="text-amber-100 cursor-pointer transition-all duration-150"
-              :class="['w-10 justify-center', play.currentPlayingIndex.value === index ? 'liquid-wheel' : 'group-hover:ring-3 group-hover:ring-black group-hover:scale-95']"
+              :class="['w-10 justify-center', play.currentPlayingIndex.value === index ? 'liquid-wheel' : 'group-hover:ring-1 group-hover:ring-gray-700 group-hover:scale-95']"
               size="md" color="primary" @click="removeNoteFromSequence(index)">
               {{ noteItem.replace('4', '') }}
             </UButton>
             <div
               class="absolute -translate-x-2 -top-2 -right-0.5 size-5 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
               @click.stop="removeNoteFromSequence(index)">
-              <UIcon name="mingcute-close-circle-fill" class="size-5 text-black font-extrabold stroke-8" />
+              <UIcon name="mingcute-minus-circle-fill" class="size-5 text-gray-700 font-extrabold stroke-8" />
             </div>
           </div>
           <UButton variant="ghost" size="sm" icon="i-heroicons-arrow-path" @click="resetNoteSequence" class="ml-2"
@@ -82,7 +87,6 @@ definePageMeta({
         </div>
       </fieldset>
     </div>
-
     <div v-if="!showSection" class="flex mb-16">
       <PlayStopButton :has-stop="true"
         @click="play.isCurrentlyPlaying.value ? play.stopScheduled() : play.startScheduled()" />
@@ -90,7 +94,6 @@ definePageMeta({
         <legend id="play-note-sequence">Scheduler</legend>
       </fieldset>
     </div>
-
     <div v-if="!showSection">
       <Heading :level="4">Time Context</Heading>
       <UButton class="mb-4" trailing-icon="i-lucide-clock" size="xl" @click="play.startTimeContext()">
