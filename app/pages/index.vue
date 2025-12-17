@@ -45,13 +45,14 @@ definePageMeta({
       </fieldset>
     </div>
 
-    <Heading :level="4">Scheduler</Heading>
-    <UButton class="mb-4" trailing-icon="i-lucide-play" size="xl" @click="play.startScheduled()">Play scheduler
-    </UButton>
-    <UButton color="error" class="mb-8" trailing-icon="i-lucide-square" size="xl" @click="play.stopScheduled()">Stop
-      scheduler
-    </UButton>
+    <div class="flex mb-16">
+      <PlayStopButton :has-stop="true"
+        @click="play.isCurrentlyPlaying.value ? play.stopScheduled() : play.startScheduled()" />
+      <fieldset class="note-group" role="group">
+        <legend id="play-note-sequence">Scheduler</legend>
 
+      </fieldset>
+    </div>
 
     <Heading :level="4">Time Context</Heading>
     <UButton class="mb-4" trailing-icon="i-lucide-clock" size="xl" @click="play.startTimeContext()">

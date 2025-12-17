@@ -8,7 +8,7 @@ const parts: Tone.Part[] = [];
 let synth: Tone.Synth | null = null;
 const timeContext = ref<number>(0);
 let timeInterval: number | null = null;
-const currentlyPlaying = ref<boolean>(false);
+const isCurrentlyPlaying = ref<boolean>(false);
 const currentPlayingNote = ref<string | null>(null);
 const currentPlayingIndex = ref<number | null>(null);
 
@@ -65,14 +65,14 @@ export function usePlayAudio() {
     part.stop(noteSequence.length * restTime);
 
     Tone.getTransport().start();
-    currentlyPlaying.value = true;
+    isCurrentlyPlaying.value = true;
 
     // Stop transport and cleanup after sequence completes
     setTimeout(
       () => {
         Tone.getTransport().stop();
         part.dispose();
-        currentlyPlaying.value = false;
+        isCurrentlyPlaying.value = false;
         const index = parts.indexOf(part);
         if (index > -1) parts.splice(index, 1);
       },
@@ -100,6 +100,7 @@ export function usePlayAudio() {
 
     // all loops start when the Transport is started
     Tone.getTransport().start();
+    isCurrentlyPlaying.value = true;
     // ramp up to 800 bpm over 10 seconds
     Tone.getTransport().bpm.rampTo(800, 10);
   };
@@ -110,6 +111,7 @@ export function usePlayAudio() {
     loops.length = 0;
     synths.forEach((s) => s.dispose());
     synths.length = 0;
+    isCurrentlyPlaying.value = false;
   };
 
   const startTimeContext = () => {
@@ -128,7 +130,7 @@ export function usePlayAudio() {
   };
 
   return {
-    currentlyPlaying,
+    isCurrentlyPlaying,
     singleNote,
     multipleNotes,
     startScheduled,
