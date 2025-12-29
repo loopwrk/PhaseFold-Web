@@ -1,9 +1,11 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+@source "../../../content/**/*";
+
 @theme {
-  --color-accessible-blue: #5700ee;
-  --color-light-bg: #f6f5f2;
+  --color-accessible-blue: #5700ed;
+  --color-secondary: #a500ed;
 
   --breakpoint-xs: 30rem;
   --font-sans: "Inclusive Sans", sans-serif;
@@ -12,7 +14,7 @@
 @layer base {
   :root {
     --ui-primary: var(--color-accessible-blue);
-    --ui-secondary: var(--color-accessible-orange);
+    --ui-secondary: var(--color-secondary);
     --ui-text: #1c1c1c;
     --ui-bg: var(--color-light-bg);
     --ui-divider: #b1b1b1;

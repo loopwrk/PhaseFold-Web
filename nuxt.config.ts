@@ -16,6 +16,7 @@ export default defineNuxtConfig({
     "@nuxt/scripts",
     "@nuxt/test-utils",
     "@nuxt/ui",
+    "@nuxt/content",
     "@nuxtjs/color-mode",
   ],
   css: ["~/assets/css/main.css"],
