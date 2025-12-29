@@ -21,7 +21,7 @@ const clearNoteSequence = () => {
   noteSequence.value = [];
 }
 
-const showSection = ref(true)
+const showSection = ref(true);
 
 onUnmounted(() => {
   play.stopTimeContext();
@@ -35,6 +35,9 @@ definePageMeta({
 
 <template>
   <div>
+    <div class="mb-8">
+      <oscilloscope v-if="play.waveform" />
+    </div>
     <div class="flex mb-16">
       <PlayStopButton @click="play.singleNote(selectedNote)" :animate-on-play="false" />
       <fieldset class="note-group" role="group">
@@ -104,9 +107,6 @@ definePageMeta({
       </UButton>
       <div class="text-2xl font-mono">Time Context: {{ play.timeContext }}s</div>
     </div>
-
-
-
   </div>
 </template>
 

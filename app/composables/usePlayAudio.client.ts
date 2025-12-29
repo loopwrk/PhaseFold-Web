@@ -12,17 +12,66 @@ const isCurrentlyPlaying = ref<boolean>(false);
 const currentPlayingNote = ref<string | null>(null);
 const currentPlayingIndex = ref<number | null>(null);
 
+// Analyser extracts FFT or Waveform data from the incoming signal (https://tonejs.github.io/docs/14.7.38/Analyser)
+let analyser: Tone.Analyser | null = null;
+const waveform = shallowRef<Float32Array | null>(null);
+let animationFrameId: number | null = null;
+
+const updateWaveform = () => {
+  if (!analyser) return;
+  const waveFormValues = analyser.getValue() as Float32Array;
+  waveform.value = new Float32Array(waveFormValues);
+  if (isCurrentlyPlaying.value) {
+    animationFrameId = requestAnimationFrame(updateWaveform);
+  }
+};
+
 export function usePlayAudio() {
+  // Handle server-side rendering
+  if (import.meta.server) {
+    const noopAsync = async () => {};
+    return {
+      isCurrentlyPlaying: ref(false),
+      singleNote: noopAsync,
+      multipleNotes: noopAsync,
+      startScheduled: noopAsync,
+      stopScheduled: () => {},
+      waveform: shallowRef<Float32Array | null>(null),
+      timeContext: ref(0),
+      currentPlayingNote: ref<string | null>(null),
+      currentPlayingIndex: ref<number | null>(null),
+      startTimeContext: () => {},
+      stopTimeContext: () => {},
+    };
+  }
+
   const init = async () => {
     await Tone.start();
-    if (!synth) synth = new Tone.Synth().toDestination();
+
+    if (!synth) {
+      synth = new Tone.Synth({
+        oscillator: { type: "sine" },
+      }).toDestination();
+    }
+
+    if (!analyser) {
+      analyser = new Tone.Analyser("waveform", 1024);
+      synth.connect(analyser);
+      waveform.value = new Float32Array(1024);
+    }
   };
 
   const singleNote = async (note: string) => {
     await init();
     const now = Tone.now();
+    isCurrentlyPlaying.value = true;
     synth?.triggerAttack(note, now);
     synth?.triggerRelease(now + 1);
+
+    // Stop visualization after note ends
+    setTimeout(() => {
+      isCurrentlyPlaying.value = false;
+    }, 500);
   };
 
   const multipleNotes = async (
@@ -129,12 +178,23 @@ export function usePlayAudio() {
     }
   };
 
+  watch(isCurrentlyPlaying, (playing) => {
+    if (playing) {
+      updateWaveform();
+    } else if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+      waveform.value = new Float32Array(1024);
+    }
+  });
+
   return {
     isCurrentlyPlaying,
     singleNote,
     multipleNotes,
     startScheduled,
     stopScheduled,
+    waveform,
     timeContext,
     currentPlayingNote,
     currentPlayingIndex,
