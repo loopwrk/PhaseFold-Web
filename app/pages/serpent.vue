@@ -48,11 +48,41 @@ let light: THREE.PointLight;
 let ground: THREE.Mesh;
 let controls: PointerLockControls;
 
+const canvasContainer = ref<HTMLDivElement | null>(null);
+const isFullscreen = ref(false);
+
+const updateRendererSize = () => {
+    if (!canvasContainer.value || !renderer || !camera) return;
+
+    const width = canvasContainer.value.clientWidth;
+    const height = canvasContainer.value.clientHeight;
+
+    renderer.setSize(width, height);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+};
+
+const toggleFullscreen = async () => {
+    if (!canvasContainer.value) return;
+
+    try {
+        if (!document.fullscreenElement) {
+            await canvasContainer.value.requestFullscreen();
+            isFullscreen.value = true;
+        } else {
+            await document.exitFullscreen();
+            isFullscreen.value = false;
+        }
+    } catch (err) {
+        console.error('Error toggling fullscreen:', err);
+    }
+};
+
 const initaliseScene = () => {
     // Create camera
     camera = markRaw(new THREE.PerspectiveCamera(
         70,
-        window.innerWidth / window.innerHeight,
+        1, // Will be updated by updateRendererSize
         0.01,
         200
     ));
@@ -60,8 +90,12 @@ const initaliseScene = () => {
 
     // Create renderer
     renderer = markRaw(new THREE.WebGLRenderer({ antialias: true }));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+
+    if (canvasContainer.value) {
+        canvasContainer.value.appendChild(renderer.domElement);
+        // Set initial size based on container
+        updateRendererSize();
+    }
 
     // Create lights
     scene.add(markRaw(new THREE.AmbientLight(0xffffff, 0.35)));
@@ -275,11 +309,6 @@ const loadWavFile = async (file: FileInput) => {
     autoFollowEnabled.value = true;
 
     wavLoaded.value = true;
-
-    // Start playback
-    await ctx.resume();
-    audio.started = true;
-    playWav(0);
 }
 
 const handleFileChange = async (event: Event) => {
@@ -299,8 +328,12 @@ const playWav = (offsetSeconds = 0) => {
     if (!audio.ctx || !audio.buffer) return;
     stopWavOnly();
 
+    console.log('Starting WAV playback at offset', offsetSeconds);
+
     const src = audio.ctx.createBufferSource();
     src.buffer = audio.buffer;
+
+    console.log('src.buffer =', src.buffer);
 
     const gain = audio.ctx.createGain();
     gain.gain.value = 0.85;
@@ -326,7 +359,7 @@ const stopWavOnly = () => {
             const played = audio.ctx!.currentTime - audio.wavStartedAt;
             audio.wavOffset = clamp(audio.wavOffset + played, 0, audio.buffer ? audio.buffer.duration : Infinity);
             audio.source.stop();
-        } catch (_) {}
+        } catch (_) { }
         audio.source = null;
     }
 }
@@ -336,6 +369,7 @@ const stopAllAudio = () => {
 }
 
 const startAudio = async () => {
+    console.log('Starting audio playback');
     if (audio.ctx) {
         await audio.ctx.resume();
     }
@@ -635,33 +669,54 @@ onMounted(() => {
     initaliseScene();
     last = performance.now();
     requestAnimationFrame(animate);
+
+    // Handle window resize
+    window.addEventListener('resize', updateRendererSize);
+
+    // Handle fullscreen change (e.g., ESC key)
+    document.addEventListener('fullscreenchange', () => {
+        isFullscreen.value = !!document.fullscreenElement;
+        updateRendererSize();
+    });
+});
+
+onUnmounted(() => {
+    window.removeEventListener('resize', updateRendererSize);
 });
 
 </script>
 
 <template>
-    <div class="prose">
+    <div>
         <ProseH1>Serpentoscope</ProseH1>
-        <ProseH2>Serpentoscope: Where Sound Draws Coils Through Explorable Space (prototype) WIP</ProseH2>
-    </div>
+        <ProseH2>Where Sound Draws Coils Through Explorable Space (prototype) WIP</ProseH2>
 
-    <div class="mt-4 flex gap-2 flex-wrap items-center">
-        <input id="file" type="file" accept="audio/wav" class="hidden" @change="handleFileChange" />
+        <div class="flex flex-wrap items-center border-accessible-blue w-full rounded-md border-1 py-3 px-5 mb-6">
+            <input id="file" type="file" accept="audio/wav" class="hidden" @change="handleFileChange" />
 
-        <UButton as="label" for="file" color="primary" size="lg" leading-icon="i-heroicons-arrow-up-tray">
-            Load WAV
-        </UButton>
+            <UButton as="label" for="file" color="primary" size="lg" leading-icon="i-heroicons-arrow-up-tray">
+                Load WAV
+            </UButton>
 
-        <UButton id="play" :disabled="!wavLoaded" color="primary" size="lg" leading-icon="i-heroicons-play"
-            @click="startAudio">
-            Play
-        </UButton>
+            <UButton id="play" :disabled="!wavLoaded" color="primary" size="lg" leading-icon="i-heroicons-play"
+                @click="startAudio">
+                Play
+            </UButton>
 
-        <UButton id="stop" color="neutral" variant="outline" size="lg" leading-icon="i-heroicons-stop"
-            @click="stopAllAudio">
-            Stop
-        </UButton>
+            <UButton id="stop" color="neutral" variant="outline" size="lg" leading-icon="i-heroicons-stop"
+                @click="stopAllAudio">
+                Stop
+            </UButton>
+
+            <UButton
+                color="neutral"
+                variant="outline"
+                size="lg"
+                :leading-icon="isFullscreen ? 'i-heroicons-arrows-pointing-in' : 'i-heroicons-arrows-pointing-out'"
+                @click="toggleFullscreen">
+                {{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
+            </UButton>
+        </div>
+        <div class="rounded-lg w-full h-[600px] bg-black" ref="canvasContainer"></div>
     </div>
 </template>
-
-<style scoped></style>
