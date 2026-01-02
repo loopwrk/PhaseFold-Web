@@ -6,38 +6,10 @@ const wavLoaded = ref(false);
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-// build a line from N points.
-// Base: XY are (L(t), R(t))
-const N = 1200;
-const trailVertexPositions = new Float32Array(N * 3);
-
-const geometry = markRaw(new THREE.BufferGeometry());
-geometry.setAttribute(
-    "position",
-    new THREE.BufferAttribute(trailVertexPositions, 3)
-);
-
-const material = markRaw(new THREE.LineBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.95,
-}));
-
 const snapshotCorridorPoints = ref(null as THREE.Points | null);
 const snapshotCorridorLines = ref(null as THREE.Line | null);
-const line = markRaw(new THREE.Line(geometry, material));
 const useLineMode = ref(false);
 const scene = markRaw(new THREE.Scene());
-
-let writeIndex = 0;
-let phase = 0;
-
-const modulationParams = ref({
-    ringRadius: 2.2,
-    xyScale: 1.2,
-    drift: 0.0,
-    detune: 0.0,
-});
 
 const autoFollowEnabled = ref(true);
 
@@ -157,9 +129,6 @@ const initaliseScene = () => {
 
     // Add fog
     scene.fog = markRaw(new THREE.Fog(fog.colour, fog.distanceStart, fog.distanceEnd));
-
-    // Add line to scene
-    scene.add(line);
 };
 
 interface AudioState {
@@ -169,13 +138,6 @@ interface AudioState {
     wavStartedAt: number;
     wavOffset: number;
     started: boolean;
-    mode?: string;
-    oscL: OscillatorNode | null;
-    oscR: OscillatorNode | null;
-    analyserL: AnalyserNode | null;
-    analyserR: AnalyserNode | null;
-    dataL: Float32Array | null;
-    dataR: Float32Array | null;
 }
 
 interface FileInput extends File {
@@ -189,12 +151,6 @@ const audio: AudioState = {
     wavStartedAt: 0,
     wavOffset: 0,
     started: false,
-    oscL: null,
-    oscR: null,
-    analyserL: null,
-    analyserR: null,
-    dataL: null,
-    dataR: null,
 };
 
 const corridorState = ref({
@@ -331,9 +287,6 @@ const initLiveSnapshotCorridor = (buffer: AudioBuffer) => {
     lines.visible = useLineMode.value; // Show line if in line mode
     snapshotCorridorLines.value = lines;
     scene.add(lines);
-
-    // Hide the live standing-wave line when in WAV mode (snapshotCorridorPoints becomes the main object)
-    line.visible = false;
 }
 
 const loadWavFile = async (file: FileInput) => {
@@ -345,7 +298,6 @@ const loadWavFile = async (file: FileInput) => {
     const decoded = await ctx.decodeAudioData(arrayBuf);
     console.log('WAV file decoded:', decoded);
     audio.buffer = decoded;
-    audio.mode = "wav";
 
     // Build the 3D snapshot corridor progressively as playback advances
     initLiveSnapshotCorridor(decoded);
@@ -390,10 +342,8 @@ const playWav = (offsetSeconds = 0) => {
 
     src.start(0, offsetSeconds);
     src.onended = () => {
-        if (audio.mode === "wav") {
-            // leave the corridor in place; just stop advancing playback mapping
-            audio.source = null;
-        }
+        // leave the corridor in place; just stop advancing playback mapping
+        audio.source = null;
     };
 }
 
@@ -459,7 +409,6 @@ const analyzeFrequencyBand = (data: Float32Array, startIdx: number, windowLen: n
 
 const getPlaybackTimeSeconds = () => {
     if (!audio.ctx) return 0;
-    if (audio.mode !== "wav") return 0;
     const played = audio.source ? (audio.ctx.currentTime - audio.wavStartedAt) : 0;
     return clamp(audio.wavOffset + played, 0, audio.buffer ? audio.buffer.duration : Infinity);
 }
@@ -638,82 +587,6 @@ const updateLiveSnapshotCorridor = () => {
     }
 }
 
-const updateShape = (dt: number) => {
-    if (audio.mode !== "standing") return;
-    if (!audio.oscL || !audio.oscR || !audio.ctx) return;
-
-    // Slow modulation that doesn't destabilise everything
-    phase += dt * (1.0 + modulationParams.value.drift);
-    const base = 110;
-    audio.oscL.frequency.setTargetAtTime(
-        base + modulationParams.value.detune,
-        audio.ctx.currentTime,
-        0.03
-    );
-    audio.oscR.frequency.setTargetAtTime(
-        base - modulationParams.value.detune,
-        audio.ctx.currentTime,
-        0.03
-    );
-
-    // Sample a single “instantaneous” value from each channel.
-    // We take a mid-buffer sample from the time-domain waveform.
-    function getStereoSample() {
-        if (audio.mode === "standing") {
-            if (!audio.analyserL || !audio.analyserR || !audio.dataL || !audio.dataR) {
-                return { L: 0, R: 0 };
-            }
-            audio.analyserL.getFloatTimeDomainData(audio.dataL);
-            audio.analyserR.getFloatTimeDomainData(audio.dataR);
-            const i = (audio.dataL.length / 2) | 0;
-            return { L: audio.dataL[i] ?? 0, R: audio.dataR[i] ?? 0 };
-        }
-
-        // WAV mode: sample directly from decoded AudioBuffer at the current playback time
-        if (!audio.buffer) return { L: 0, R: 0 };
-
-        const t = getPlaybackTimeSeconds();
-        const sr = audio.buffer.sampleRate;
-        const idx = Math.floor(t * sr);
-
-        const ch0 = audio.buffer.getChannelData(0);
-        const ch1 = audio.buffer.numberOfChannels > 1 ? audio.buffer.getChannelData(1) : ch0;
-
-        const i0 = clamp(idx, 0, ch0.length - 1);
-        return { L: ch0[i0] ?? 0, R: ch1[i0] ?? 0 };
-    }
-
-    // Insert several points per frame for smoother curves
-    const steps = 18;
-    for (let s = 0; s < steps; s++) {
-        const { L, R } = getStereoSample();
-
-        // 2D Lissajous core
-        const x2 = L * modulationParams.value.xyScale;
-        const y2 = R * modulationParams.value.xyScale;
-
-        // Stable "extrusion": wrap around a ring using a phase index
-        const u = (writeIndex / N) * Math.PI * 2;
-        const ringX = Math.cos(u) * modulationParams.value.ringRadius;
-        const ringZ = Math.sin(u) * modulationParams.value.ringRadius;
-
-        const x = ringX + x2;
-        const y = y2;
-        const z = ringZ;
-
-        const i3 = writeIndex * 3;
-        trailVertexPositions[i3 + 0] = x;
-        trailVertexPositions[i3 + 1] = y;
-        trailVertexPositions[i3 + 2] = z;
-
-        writeIndex = (writeIndex + 1) % N;
-    }
-
-    if (geometry.attributes.position) {
-        geometry.attributes.position.needsUpdate = true;
-    }
-}
-
 const updateAutoFollowCamera = () => {
     if (!autoFollowEnabled.value || !snapshotCorridorPoints.value || !corridorState.value.buffer) return;
 
@@ -751,13 +624,8 @@ const updateAutoFollowCamera = () => {
 
 
 // ---------- Main loop ----------
-let last = 0;
 const animate = (now: number) => {
-    const dt = Math.min(0.033, (now - last) / 1000);
-    last = now;
-
-    if (audio.started) updateShape(dt);
-    if (audio.mode === "wav" && snapshotCorridorPoints.value) {
+    if (snapshotCorridorPoints.value) {
         // Build points progressively as playback advances
         updateLiveSnapshotCorridor();
         // Auto-follow the corridor head if enabled
@@ -784,7 +652,6 @@ watch(useLineMode, (newValue) => {
 
 onMounted(() => {
     initaliseScene();
-    last = performance.now();
     requestAnimationFrame(animate);
 
     // Handle window resize
