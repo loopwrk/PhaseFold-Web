@@ -78,15 +78,50 @@ const toggleFullscreen = async () => {
     }
 };
 
+
+
 const initaliseScene = () => {
+    const cameraFOV = ref(70);
+    const aspectRatio = ref(1);
+    const nearClip = ref(0.01);
+    const farClip = ref(200);
+    const pointLightIntensity = ref(0.35);
+    const lightColour = ref(0xffffff);
+    const lightIntensity = ref(0.9);
+    const groundColor = ref(0x050505);
+
+    const initCamCoords = {
+        x: 0,
+        y: 1.6,
+        z: 6,
+    } as const;
+
+    const pointLightPos = {
+        x: 3,
+        y: 6,
+        z: 4,
+    } as const;
+
+    const planeDimensions = {
+        width: 200,
+        height: 200,
+    } as const;
+
+    const fog = {
+        colour: 0x000000,
+        distanceStart: 200,
+        distanceEnd: 200,
+    } as const;
+
     // Create camera
     camera = markRaw(new THREE.PerspectiveCamera(
-        70,
-        1, // Will be updated by updateRendererSize
-        0.01,
-        200
+        cameraFOV.value,
+        aspectRatio.value, // Will be updated by updateRendererSize
+        nearClip.value,
+        farClip.value
     ));
-    camera.position.set(0, 1.6, 6);
+
+    camera.position.set(initCamCoords.x, initCamCoords.y, initCamCoords.z);
 
     // Create renderer
     renderer = markRaw(new THREE.WebGLRenderer({ antialias: true }));
@@ -98,16 +133,16 @@ const initaliseScene = () => {
     }
 
     // Create lights
-    scene.add(markRaw(new THREE.AmbientLight(0xffffff, 0.35)));
-    light = markRaw(new THREE.PointLight(0xffffff, 0.9));
-    light.position.set(3, 6, 4);
+    scene.add(markRaw(new THREE.AmbientLight(lightColour.value, pointLightIntensity.value)));
+    light = markRaw(new THREE.PointLight(lightColour.value, lightIntensity.value));
+    light.position.set(pointLightPos.x, pointLightPos.y, pointLightPos.z);
     scene.add(light);
 
     // Create ground
     ground = markRaw(new THREE.Mesh(
-        new THREE.PlaneGeometry(200, 200),
+        new THREE.PlaneGeometry(planeDimensions.width, planeDimensions.height),
         new THREE.MeshStandardMaterial({
-            color: 0x050505,
+            color: groundColor.value,
             roughness: 1,
             metalness: 0,
         })
@@ -121,7 +156,7 @@ const initaliseScene = () => {
     scene.add(controls.object);
 
     // Add fog
-    scene.fog = markRaw(new THREE.Fog(0x000000, 2, 45));
+    scene.fog = markRaw(new THREE.Fog(fog.colour, fog.distanceStart, fog.distanceEnd));
 
     // Add line to scene
     scene.add(line);
@@ -135,27 +170,19 @@ interface AudioState {
     wavOffset: number;
     started: boolean;
     mode?: string;
+    oscL: OscillatorNode | null;
+    oscR: OscillatorNode | null;
+    analyserL: AnalyserNode | null;
+    analyserR: AnalyserNode | null;
+    dataL: Float32Array | null;
+    dataR: Float32Array | null;
 }
 
 interface FileInput extends File {
     arrayBuffer(): Promise<ArrayBuffer>;
 }
 
-const audio: {
-    ctx: AudioContext | null;
-    buffer: AudioBuffer | null;
-    source: AudioBufferSourceNode | null;
-    wavStartedAt: number;
-    wavOffset: number;
-    started: boolean;
-    mode?: string;
-    oscL: OscillatorNode | null;
-    oscR: OscillatorNode | null;
-    analyserL: AnalyserNode | null,
-    analyserR: AnalyserNode | null,
-    dataL: Float32Array<ArrayBuffer> | null,
-    dataR: Float32Array<ArrayBuffer> | null,
-} = {
+const audio: AudioState = {
     ctx: null,
     buffer: null,
     source: null,
@@ -182,14 +209,20 @@ const corridorState = ref({
     builtFrames: 0,
     // typed array backing the Points geometry
     pos: null as Float32Array | null,
+    // Oscillation data
+    frequencies: null as Float32Array | null,
+    amplitudes: null as Float32Array | null,
+    anchorPositions: null as Float32Array | null,
 });
+
+const oscillationEnabled = ref(false);
 
 const corridorMeta = ref({
     zStep: 0.08,
     pointsPerFrame: 128, // points per frame
     windowSize: 2048, // samples per frame window
     hopSize: 1024,    // samples between frames
-    maxPoints: 500000, // cap total points for performance (instead of fixed frame count)
+    maxPoints: 1500000, // cap total points for performance (instead of fixed frame count)
 });
 
 const clearCorridor = () => {
@@ -220,6 +253,9 @@ const clearCorridor = () => {
     corridorState.value.frameCount = 0;
     corridorState.value.builtFrames = 0;
     corridorState.value.pos = null;
+    corridorState.value.frequencies = null;
+    corridorState.value.amplitudes = null;
+    corridorState.value.anchorPositions = null;
 }
 
 const initLiveSnapshotCorridor = (buffer: AudioBuffer) => {
@@ -248,6 +284,15 @@ const initLiveSnapshotCorridor = (buffer: AudioBuffer) => {
 
     // Create shared position and color buffers
     const colors = new Float32Array(totalPoints * 3);
+
+    // Allocate oscillation data arrays
+    const frequencies = new Float32Array(totalPoints);
+    const amplitudes = new Float32Array(totalPoints);
+    const anchorPositions = new Float32Array(totalPoints * 3);
+
+    corridorState.value.frequencies = frequencies;
+    corridorState.value.amplitudes = amplitudes;
+    corridorState.value.anchorPositions = anchorPositions;
 
     // Create POINTS version
     const gPoints = markRaw(new THREE.BufferGeometry());
@@ -435,8 +480,9 @@ const getTargetFrameForPlayback = () => {
 const buildOneCorridorFrame = (frameIndex: number) => {
     // Writes a single frame into the preallocated positions buffer.
     const { pointsPerFrame, windowSize, hopSize, zStep } = corridorMeta.value;
-    const { ch0, ch1, frameCount, xyScale, ringRadius, pos } = corridorState.value;
+    const { ch0, ch1, frameCount, xyScale, ringRadius, pos, frequencies, amplitudes, anchorPositions } = corridorState.value;
     if (!pos || !ch0 || !ch1 || !snapshotCorridorPoints.value) return;
+    if (!frequencies || !amplitudes || !anchorPositions) return;
 
     const frameStart = frameIndex * hopSize;
     const z0 = (frameIndex - frameCount / 2) * zStep;
@@ -494,7 +540,64 @@ const buildOneCorridorFrame = (frameIndex: number) => {
         colors[p + 1] = color.g;
         colors[p + 2] = color.b;
 
+        // Store oscillation data for this point
+        const pointIndex = frameIndex * pointsPerFrame + k;
+
+        // Convert freqContent (0-1) to Hz using logarithmic scale
+        // Low frequencies: ~100 Hz, High frequencies: ~8000 Hz
+        const minFreq = 100;
+        const maxFreq = 8000;
+        const hz = minFreq * Math.pow(maxFreq / minFreq, freqContent);
+        frequencies[pointIndex] = hz;
+
+        // Store amplitude (scale to reasonable oscillation range: 0.005 to 0.05 units)
+        amplitudes[pointIndex] = normalizedAmp * 0.045 + 0.005;
+
+        // Store anchor position (original position before any oscillation)
+        anchorPositions[p] = pos[p];
+        anchorPositions[p + 1] = pos[p + 1];
+        anchorPositions[p + 2] = pos[p + 2];
+
         p += 3;
+    }
+}
+
+const oscillateExistingPoints = (time: number) => {
+    // Apply oscillation to all built points based on their stored frequency data
+    const { pos, frequencies, amplitudes, anchorPositions, builtFrames } = corridorState.value;
+    const { pointsPerFrame } = corridorMeta.value;
+
+    if (!pos || !frequencies || !amplitudes || !anchorPositions) return;
+    if (builtFrames === 0) return;
+
+    const totalBuiltPoints = builtFrames * pointsPerFrame;
+
+    for (let i = 0; i < totalBuiltPoints; i++) {
+        const p = i * 3;
+        const freq = frequencies[i];
+        const amp = amplitudes[i];
+
+        // Calculate oscillation using sine wave at the point's frequency
+        // Use slight phase offsets for each axis to create 3D motion
+        const phase = 2 * Math.PI * freq * time;
+        const oscX = Math.sin(phase) * amp;
+        const oscY = Math.sin(phase + Math.PI / 3) * amp; // 60° phase shift
+        const oscZ = Math.sin(phase + 2 * Math.PI / 3) * amp; // 120° phase shift
+
+        // Update position by adding oscillation to anchor position
+        pos[p] = anchorPositions[p] + oscX;
+        pos[p + 1] = anchorPositions[p + 1] + oscY;
+        pos[p + 2] = anchorPositions[p + 2] + oscZ;
+    }
+
+    // Mark geometry for update
+    if (snapshotCorridorPoints.value) {
+        const pointsPos = snapshotCorridorPoints.value.geometry.attributes.position;
+        if (pointsPos) pointsPos.needsUpdate = true;
+    }
+    if (snapshotCorridorLines.value) {
+        const linesPos = snapshotCorridorLines.value.geometry.attributes.position;
+        if (linesPos) linesPos.needsUpdate = true;
     }
 }
 
@@ -659,11 +762,25 @@ const animate = (now: number) => {
         updateLiveSnapshotCorridor();
         // Auto-follow the corridor head if enabled
         updateAutoFollowCamera();
+        // Apply oscillation to existing points if enabled
+        if (oscillationEnabled.value) {
+            oscillateExistingPoints(now / 1000);
+        }
     }
 
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
 }
+
+// Watch for render mode changes and update visibility
+watch(useLineMode, (newValue) => {
+    if (snapshotCorridorPoints.value) {
+        snapshotCorridorPoints.value.visible = !newValue;
+    }
+    if (snapshotCorridorLines.value) {
+        snapshotCorridorLines.value.visible = newValue;
+    }
+});
 
 onMounted(() => {
     initaliseScene();
@@ -708,15 +825,37 @@ onUnmounted(() => {
                 Stop
             </UButton>
 
-            <UButton
-                color="neutral"
-                variant="outline"
-                size="lg"
+            <UButton color="neutral" variant="outline" size="lg"
                 :leading-icon="isFullscreen ? 'i-heroicons-arrows-pointing-in' : 'i-heroicons-arrows-pointing-out'"
                 @click="toggleFullscreen">
                 {{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
             </UButton>
         </div>
+
+        <div class="w-full mb-6 px-5 space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-2">
+                    Points Per Frame: {{ corridorMeta.pointsPerFrame }}
+                </label>
+                <USlider v-model="corridorMeta.pointsPerFrame" :min="32" :max="512" :step="32"
+                    :disabled="audio.started" />
+            </div>
+
+            <div>
+                <URadioGroup v-model="useLineMode" legend="Render Mode" :items="[
+                    { label: 'Points', value: false },
+                    { label: 'Lines', value: true }
+                ]" value-key="value" orientation="horizontal" :disabled="audio.started" />
+            </div>
+
+            <div class="flex items-center gap-3">
+                <UCheckbox v-model="oscillationEnabled" id="oscillation-toggle" />
+                <label for="oscillation-toggle" class="text-sm font-medium cursor-pointer">
+                    Enable Point Oscillation
+                </label>
+            </div>
+        </div>
+
         <div class="rounded-lg w-full h-[600px] bg-black" ref="canvasContainer"></div>
     </div>
 </template>
