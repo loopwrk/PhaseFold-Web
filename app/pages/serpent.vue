@@ -174,8 +174,8 @@ const corridorState = ref({
 const oscillationEnabled = ref(false);
 
 const corridorMeta = ref({
-    zStep: 0.08,
-    pointsPerFrame: 128, // points per frame
+    zStep: 0.08, // distance between frames along Z axis
+    pointsPerFrame: 128,
     windowSize: 2048, // samples per frame window
     hopSize: 1024,    // samples between frames
     maxPoints: 1500000, // cap total points for performance (instead of fixed frame count)
@@ -235,11 +235,12 @@ const initLiveSnapshotCorridor = (buffer: AudioBuffer) => {
     corridorState.value.builtFrames = 0;
 
     const totalPoints = frameCount * pointsPerFrame;
-    const pos = new Float32Array(totalPoints * 3);
+    const positionArrayMultiplier = 3; // x, y, z
+    const pos = new Float32Array(totalPoints * positionArrayMultiplier);
     corridorState.value.pos = pos;
 
-    // Create shared position and color buffers
-    const colors = new Float32Array(totalPoints * 3);
+    const colorArrayMultiplier = 3;    // r, g, b
+    const colors = new Float32Array(totalPoints * colorArrayMultiplier);
 
     // Allocate oscillation data arrays
     const frequencies = new Float32Array(totalPoints);
@@ -252,8 +253,8 @@ const initLiveSnapshotCorridor = (buffer: AudioBuffer) => {
 
     // Create POINTS version
     const gPoints = markRaw(new THREE.BufferGeometry());
-    gPoints.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    gPoints.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    gPoints.setAttribute("position", new THREE.BufferAttribute(pos, positionArrayMultiplier));
+    gPoints.setAttribute("color", new THREE.BufferAttribute(colors, colorArrayMultiplier));
     gPoints.setDrawRange(0, 0);
 
     const mPoints = markRaw(new THREE.PointsMaterial({
@@ -262,17 +263,24 @@ const initLiveSnapshotCorridor = (buffer: AudioBuffer) => {
         opacity: 0.95,
         vertexColors: true,
     }));
+
+    const pointBasePos = reactive({
+        x: 0,
+        y: 1.7,
+        z: 0.95,
+    });
+
     const points = markRaw(new THREE.Points(gPoints, mPoints));
-    points.position.set(0, 1.7, 0);
+    points.position.set(pointBasePos.x, pointBasePos.y, pointBasePos.z);
     points.frustumCulled = false;
     points.visible = !useLineMode.value; // Show points if not in line mode
     snapshotCorridorPoints.value = points;
     scene.add(points);
 
-    // Create LINE version (shares same position/color data)
     const gLine = markRaw(new THREE.BufferGeometry());
-    gLine.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    gLine.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const attrSize = ref(3);
+    gLine.setAttribute("position", new THREE.BufferAttribute(pos, attrSize.value));
+    gLine.setAttribute("color", new THREE.BufferAttribute(colors, attrSize.value));
     gLine.setDrawRange(0, 0);
 
     const mLine = markRaw(new THREE.LineBasicMaterial({
@@ -281,6 +289,7 @@ const initLiveSnapshotCorridor = (buffer: AudioBuffer) => {
         opacity: 0.95,
         linewidth: 1, // Note: linewidth > 1 only works with WebGLRenderer in some browsers
     }));
+
     const lines = markRaw(new THREE.Line(gLine, mLine));
     lines.position.set(0, 1.7, 0);
     lines.frustumCulled = false;
