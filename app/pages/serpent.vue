@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import * as THREE from "three";
-import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 
 const wavLoaded = ref(false);
 
@@ -9,135 +8,17 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 const snapshotCorridorPoints = ref(null as THREE.Points | null);
 const snapshotCorridorLines = ref(null as THREE.Line | null);
 const useLineMode = ref(false);
-const scene = markRaw(new THREE.Scene());
+
+const canvasContainer = ref<HTMLDivElement | null>(null);
+const three = useThree(canvasContainer);
+const scene = three.scene;
 
 const autoFollowEnabled = ref(true);
 
-// Three.js objects that need browser environment
-let camera: THREE.PerspectiveCamera;
-let renderer: THREE.WebGLRenderer;
-let light: THREE.PointLight;
-let ground: THREE.Mesh;
-let controls: PointerLockControls;
-
-const canvasContainer = ref<HTMLDivElement | null>(null);
-const isFullscreen = ref(false);
-
 let requestAnimFrame: number | null = null;
 
-const onFullscreenChange = () => {
-    isFullscreen.value = !!document.fullscreenElement;
-    updateRendererSize();
-};
-
-const updateRendererSize = () => {
-    if (!canvasContainer.value || !renderer || !camera) return;
-
-    const width = canvasContainer.value.clientWidth;
-    const height = canvasContainer.value.clientHeight;
-
-    renderer.setSize(width, height);
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
-};
-
-const toggleFullscreen = async () => {
-    if (!canvasContainer.value) return;
-
-    try {
-        if (!document.fullscreenElement) {
-            await canvasContainer.value.requestFullscreen();
-            isFullscreen.value = true;
-        } else {
-            await document.exitFullscreen();
-            isFullscreen.value = false;
-        }
-    } catch (err) {
-        console.error('Error toggling fullscreen:', err);
-    }
-};
-
-
-
 const initaliseScene = () => {
-    const cameraFOV = ref(70);
-    const aspectRatio = ref(1);
-    const nearClip = ref(0.01);
-    const farClip = ref(200);
-    const pointLightIntensity = ref(0.35);
-    const lightColour = ref(0xffffff);
-    const lightIntensity = ref(0.9);
-    const groundColor = ref(0x050505);
-
-    const initCamCoords = {
-        x: 0,
-        y: 1.6,
-        z: 6,
-    } as const;
-
-    const pointLightPos = {
-        x: 3,
-        y: 6,
-        z: 4,
-    } as const;
-
-    const planeDimensions = {
-        width: 200,
-        height: 200,
-    } as const;
-
-    const fog = {
-        colour: 0x000000,
-        distanceStart: 200,
-        distanceEnd: 200,
-    } as const;
-
-    // Create camera
-    camera = markRaw(new THREE.PerspectiveCamera(
-        cameraFOV.value,
-        aspectRatio.value, // Will be updated by updateRendererSize
-        nearClip.value,
-        farClip.value
-    ));
-
-    camera.position.set(initCamCoords.x, initCamCoords.y, initCamCoords.z);
-
-    // Create renderer
-    renderer = markRaw(new THREE.WebGLRenderer({ antialias: true }));
-
-    if (canvasContainer.value) {
-        canvasContainer.value.appendChild(renderer.domElement);
-        // Apply border radius to match container (rounded-lg = 0.5rem)
-        renderer.domElement.style.borderRadius = '0.5rem';
-        // Set initial size based on container
-        updateRendererSize();
-    }
-
-    // Create lights
-    scene.add(markRaw(new THREE.AmbientLight(lightColour.value, pointLightIntensity.value)));
-    light = markRaw(new THREE.PointLight(lightColour.value, lightIntensity.value));
-    light.position.set(pointLightPos.x, pointLightPos.y, pointLightPos.z);
-    scene.add(light);
-
-    // Create ground
-    ground = markRaw(new THREE.Mesh(
-        new THREE.PlaneGeometry(planeDimensions.width, planeDimensions.height),
-        new THREE.MeshStandardMaterial({
-            color: groundColor.value,
-            roughness: 1,
-            metalness: 0,
-        })
-    ));
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0;
-    scene.add(ground);
-
-    // Create controls
-    controls = markRaw(new PointerLockControls(camera, renderer.domElement));
-    scene.add(controls.object);
-
-    // Add fog
-    scene.fog = markRaw(new THREE.Fog(fog.colour, fog.distanceStart, fog.distanceEnd));
+    three.init();
 };
 
 interface AudioState {
@@ -668,7 +549,8 @@ const updateAutoFollowCamera = () => {
     };
 
     // Smooth camera movement
-    const camObj = controls.object;
+    const camObj = three.controls.value?.object;
+    if (!camObj) return;
     const lerpFactor = 0.1;
     camObj.position.x += (targetPos.x - camObj.position.x) * lerpFactor;
     camObj.position.y += (targetPos.y - camObj.position.y) * lerpFactor;
@@ -676,7 +558,7 @@ const updateAutoFollowCamera = () => {
 
     // Look at the corridor head
     const lookTarget = new THREE.Vector3(0, galleryY, headZ);
-    camera.lookAt(lookTarget);
+    three.camera.value?.lookAt(lookTarget);
 }
 
 
@@ -694,7 +576,9 @@ const animate = (now: number) => {
         }
     }
 
-    renderer.render(scene, camera);
+    const r = three.renderer.value;
+    const c = three.camera.value;
+    if (r && c) r.render(scene, c);
     requestAnimFrame = requestAnimationFrame(animate);
 }
 
@@ -711,26 +595,17 @@ watch(useLineMode, (newValue) => {
 onMounted(() => {
     initaliseScene();
     requestAnimFrame = requestAnimationFrame(animate);
-
-    // Handle window resize
-    window.addEventListener('resize', updateRendererSize);
-
-    // Handle fullscreen change (e.g., ESC key)
-    document.addEventListener('fullscreenchange', onFullscreenChange);
 });
 
 onUnmounted(() => {
-
     if (requestAnimFrame !== null) {
         cancelAnimationFrame(requestAnimFrame);
         requestAnimFrame = null;
     }
 
-    window.removeEventListener('resize', updateRendererSize);
-    document.removeEventListener('fullscreenchange', onFullscreenChange);
-
     stopAllAudio();
     clearCorridor();
+    three.dispose();
 });
 
 </script>
@@ -824,8 +699,9 @@ onUnmounted(() => {
 
         <div class="relative rounded-lg w-full h-[600px] bg-black" ref="canvasContainer">
             <UButton class="absolute top-4 right-4 z-10" color="primary" variant="solid" size="xl"
-                :icon="isFullscreen ? 'i-heroicons-arrows-pointing-in' : 'i-heroicons-arrows-pointing-out'"
-                @click="toggleFullscreen" :aria-label="isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'" />
+                :icon="three.isFullscreen ? 'i-heroicons-arrows-pointing-in' : 'i-heroicons-arrows-pointing-out'"
+                @click="three.toggleFullscreen"
+                :aria-label="three.isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'" />
         </div>
     </div>
 </template>
