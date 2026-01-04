@@ -298,9 +298,9 @@ const initLiveSnapshotCorridor = (buffer: AudioBuffer) => {
     scene.add(points);
 
     const gLine = markRaw(new THREE.BufferGeometry());
-    const attrSize = ref(3);
-    gLine.setAttribute("position", new THREE.BufferAttribute(pos, attrSize.value));
-    gLine.setAttribute("color", new THREE.BufferAttribute(colors, attrSize.value));
+    const buffAttrSize = 3;
+    gLine.setAttribute("position", new THREE.BufferAttribute(pos, buffAttrSize));
+    gLine.setAttribute("color", new THREE.BufferAttribute(colors, buffAttrSize));
     gLine.setDrawRange(0, 0);
 
     const mLine = markRaw(new THREE.LineBasicMaterial({
@@ -362,7 +362,8 @@ const playWav = (offsetSeconds = 0) => {
     console.log('src.buffer =', src.buffer);
 
     const gain = audio.ctx.createGain();
-    gain.gain.value = 0.85;
+    const gainLevel = 0.85; // Reduce volume to 85% to avoid clipping
+    gain.gain.value = gainLevel;
     src.connect(gain).connect(audio.ctx.destination);
 
     audio.source = src;
@@ -407,8 +408,8 @@ const analyzeFrequencyBand = (data: Float32Array, startIdx: number, windowLen: n
     const minSamples = ref(8)
     const endIdx = Math.min(startIdx + windowLen, data.length);
     const actualLen = endIdx - startIdx;
-    const midFreq = ref(0.5)
-    if (actualLen < minSamples.value) return midFreq.value;
+    const midFreq = 0.5
+    if (actualLen < minSamples.value) return midFreq;
 
     let lowEnergy = ref(0);   // Energy in the signal itself (slow changes)
     let highEnergy = ref(0);  // Energy in the derivative (fast changes)
@@ -427,16 +428,16 @@ const analyzeFrequencyBand = (data: Float32Array, startIdx: number, windowLen: n
     lowEnergy.value = Math.sqrt(lowEnergy.value / actualLen);
     highEnergy.value = Math.sqrt(highEnergy.value / actualLen);
 
-    const totalEnergy = ref(lowEnergy.value + highEnergy.value);
-    if (totalEnergy.value < 0.001) return midFreq.value; // Silence
+    const totalEnergy = lowEnergy.value + highEnergy.value;
+    if (totalEnergy < 0.001) return midFreq; // Silence
 
     // Ratio of high to total energy indicates frequency content
     // More high energy = higher frequencies
-    const highRatio = highEnergy.value / totalEnergy.value;
+    const highRatio = highEnergy.value / totalEnergy;
 
     // Map to 0-1 range with enhanced contrast
-    const contrastMultiplier = ref(3);
-    return clamp(highRatio * contrastMultiplier.value, 0, 1);
+    const contrastMultiplier = 3;
+    return clamp(highRatio * contrastMultiplier, 0, 1);
 }
 
 const getPlaybackTimeSeconds = () => {
@@ -491,21 +492,27 @@ const buildOneCorridorFrame = (frameIndex: number) => {
 
         // Analyze frequency content in a small window around this sample
         const analysisWindow = getAnalysisWindowSize();
-        const windowStart = Math.max(0, i - analysisWindow / 2);
+        const windowCenteringCalc = 2;
+        const windowStart = Math.max(0, i - analysisWindow / windowCenteringCalc);
 
         // Analyze both channels and average
         const freqL = analyzeFrequencyBand(ch0, windowStart, analysisWindow);
         const freqR = analyzeFrequencyBand(ch1, windowStart, analysisWindow);
-        const freqContent = (freqL + freqR) / 2; // 0 = low freq, 1 = high freq
+        const channelAverage = 2;
+        const freqContent = (freqL + freqR) / channelAverage; // 0 = low freq, 1 = high freq
 
         // Map frequency to color with FULL spectrum range:
         // Low frequencies (bass) = RED (hue 0.0)
         // Mid frequencies = YELLOW/GREEN (hue 0.33)
         // High frequencies (treble) = BLUE/MAGENTA (hue 0.75)
         const color = new THREE.Color();
-        const hue = freqContent * 0.75; // Full spectrum: Red -> Orange -> Yellow -> Green -> Cyan -> Blue -> Magenta
-        const saturation = 0.85; // High saturation for vivid colors
-        const lightness = 0.35 + normalizedAmp * 0.5; // Amplitude affects brightness only
+        const hueRangeMultiplier = 0.75;
+        const hue = freqContent * hueRangeMultiplier; // Full spectrum: Red -> Orange -> Yellow -> Green -> Cyan -> Blue -> Magenta
+        const hslColourSaturation = 0.85;
+        const saturation = hslColourSaturation; // High saturation for vivid colors
+        const baseLightness = 0.35
+        const amplitudeBrightnessFactor = 0.5;
+        const lightness = baseLightness + normalizedAmp * amplitudeBrightnessFactor; // Amplitude affects brightness only
         color.setHSL(hue, saturation, lightness);
 
         // Stable 3D: wrap around a ring so each frame becomes a "floating wreath" you can walk through
@@ -526,20 +533,23 @@ const buildOneCorridorFrame = (frameIndex: number) => {
 
         // Convert freqContent (0-1) to Hz using logarithmic scale
         // Low frequencies: ~100 Hz, High frequencies: ~8000 Hz
-        const minFreq = 100;
-        const maxFreq = 8000;
-        const hz = minFreq * Math.pow(maxFreq / minFreq, freqContent);
+        const minFreqHz = 100;
+        const maxFreqHz = 8000;
+        const hz = minFreqHz * Math.pow(maxFreqHz / minFreqHz, freqContent);
         frequencies[pointIndex] = hz;
 
         // Store amplitude (scale to reasonable oscillation range: 0.005 to 0.05 units)
-        amplitudes[pointIndex] = normalizedAmp * 0.045 + 0.005;
+        const minOscAmpRange = 0.045;
+        const maxOscAmpRange = 0.005;
+        amplitudes[pointIndex] = normalizedAmp * minOscAmpRange + maxOscAmpRange;
 
         // Store anchor position (original position before any oscillation)
-        anchorPositions[p] = pos[p];
-        anchorPositions[p + 1] = pos[p + 1];
-        anchorPositions[p + 2] = pos[p + 2];
+        anchorPositions[p] = pos[p] ?? 0;
+        anchorPositions[p + 1] = pos[p + 1] ?? 0;
+        anchorPositions[p + 2] = pos[p + 2] ?? 0;
 
-        p += 3;
+        const positionIncrement = 3;
+        p += positionIncrement;
     }
 }
 
@@ -554,21 +564,25 @@ const oscillateExistingPoints = (time: number) => {
     const totalBuiltPoints = builtFrames * pointsPerFrame;
 
     for (let i = 0; i < totalBuiltPoints; i++) {
-        const p = i * 3;
-        const freq = frequencies[i];
-        const amp = amplitudes[i];
+        const positionArrayStride = 3;
+        const p = i * positionArrayStride;
+        const freq = frequencies[i] ?? 0;
+        const amp = amplitudes[i] ?? 0;
 
         // Calculate oscillation using sine wave at the point's frequency
         // Use slight phase offsets for each axis to create 3D motion
-        const phase = 2 * Math.PI * freq * time;
+        const phaseCalcMultiplier = 2;
+        const phaseShiftY = Math.PI / 3; // 60° phase offset for Y-axis
+        const phaseShiftZ = 2 * Math.PI / 3; // 120° phase offset for Z-axis
+        const phase = phaseCalcMultiplier * Math.PI * freq * time;
         const oscX = Math.sin(phase) * amp;
-        const oscY = Math.sin(phase + Math.PI / 3) * amp; // 60° phase shift
-        const oscZ = Math.sin(phase + 2 * Math.PI / 3) * amp; // 120° phase shift
+        const oscY = Math.sin(phase + phaseShiftY) * amp;
+        const oscZ = Math.sin(phase + phaseShiftZ) * amp;
 
         // Update position by adding oscillation to anchor position
-        pos[p] = anchorPositions[p] + oscX;
-        pos[p + 1] = anchorPositions[p + 1] + oscY;
-        pos[p + 2] = anchorPositions[p + 2] + oscZ;
+        pos[p] = (anchorPositions[p] ?? 0) + oscX;
+        pos[p + 1] = (anchorPositions[p + 1] ?? 0) + oscY;
+        pos[p + 2] = (anchorPositions[p + 2] ?? 0) + oscZ;
     }
 
     // Mark geometry for update
@@ -626,7 +640,8 @@ const updateAutoFollowCamera = () => {
     const headFrameIndex = corridorState.value.builtFrames - 1;
     if (headFrameIndex < 0) return;
 
-    const headZ = (headFrameIndex - corridorState.value.frameCount / 2) * corridorMeta.value.zStep;
+    const frameCenteringDivisor = 2; // to center the head frame
+    const headZ = (headFrameIndex - corridorState.value.frameCount / frameCenteringDivisor) * corridorMeta.value.zStep;
     const galleryY = 1.7; // gallery.position.y
 
     // Position camera at an isometric angle: behind, above, and to the side of the head
@@ -663,8 +678,9 @@ const animate = (now: number) => {
         // Auto-follow the corridor head if enabled
         updateAutoFollowCamera();
         // Apply oscillation to existing points if enabled
+        const milliSecToSec = now / 1000;
         if (oscillationEnabled.value) {
-            oscillateExistingPoints(now / 1000);
+            oscillateExistingPoints(milliSecToSec);
         }
     }
 
