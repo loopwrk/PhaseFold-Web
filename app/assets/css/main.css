@@ -29,7 +29,6 @@
 
   legend {
     @apply font-medium text-accessible-blue pb-1;
-    font-size: 1.7rem;
   }
 
   ::selection {
@@ -74,6 +73,10 @@
         fill var(--theme-transition-duration) var(--theme-transition-easing),
         stroke var(--theme-transition-duration) var(--theme-transition-easing);
     }
+  }
+
+  .text-secondary {
+    @apply text-secondary;
   }
 
   .liquid-wheel {

@@ -100,6 +100,8 @@ const initaliseScene = () => {
 
     if (canvasContainer.value) {
         canvasContainer.value.appendChild(renderer.domElement);
+        // Apply border radius to match container (rounded-lg = 0.5rem)
+        renderer.domElement.style.borderRadius = '0.5rem';
         // Set initial size based on container
         updateRendererSize();
     }
@@ -172,6 +174,24 @@ const corridorState = ref({
 });
 
 const oscillationEnabled = ref(false);
+
+// Frequency analysis window sizes (in samples)
+// Smaller = better temporal resolution, larger = better frequency resolution
+const ANALYSIS_WINDOW_TEMPORAL = 256;  // Fast response, good for percussion/transients
+const ANALYSIS_WINDOW_BALANCED = 512;  // Balanced time/frequency resolution
+const ANALYSIS_WINDOW_SPECTRAL = 2048; // Detailed frequency, good for sustained tones
+
+type FrequencyResolution = 'temporal' | 'balanced' | 'spectral';
+const frequencyResolution = ref<FrequencyResolution>('balanced');
+
+const getAnalysisWindowSize = () => {
+    switch (frequencyResolution.value) {
+        case 'temporal': return ANALYSIS_WINDOW_TEMPORAL;
+        case 'spectral': return ANALYSIS_WINDOW_SPECTRAL;
+        case 'balanced':
+        default: return ANALYSIS_WINDOW_BALANCED;
+    }
+};
 
 const corridorMeta = ref({
     zStep: 0.08, // distance between frames along Z axis
@@ -384,12 +404,14 @@ const startAudio = async () => {
 // Analyze frequency content using derivative energy (rate of change)
 // High frequencies change rapidly, low frequencies change slowly
 const analyzeFrequencyBand = (data: Float32Array, startIdx: number, windowLen: number) => {
+    const minSamples = ref(8)
     const endIdx = Math.min(startIdx + windowLen, data.length);
     const actualLen = endIdx - startIdx;
-    if (actualLen < 8) return 0.5; // Default to mid
+    const midFreq = ref(0.5)
+    if (actualLen < minSamples.value) return midFreq.value;
 
-    let lowEnergy = 0;   // Energy in the signal itself (slow changes)
-    let highEnergy = 0;  // Energy in the derivative (fast changes)
+    let lowEnergy = ref(0);   // Energy in the signal itself (slow changes)
+    let highEnergy = ref(0);  // Energy in the derivative (fast changes)
 
     // Calculate energy in signal and its derivative
     for (let i = startIdx; i < endIdx - 1; i++) {
@@ -397,23 +419,24 @@ const analyzeFrequencyBand = (data: Float32Array, startIdx: number, windowLen: n
         const nextSample = data[i + 1] ?? 0;
         const derivative = nextSample - sample; // Rate of change
 
-        lowEnergy += sample * sample;
-        highEnergy += derivative * derivative;
+        lowEnergy.value += sample * sample;
+        highEnergy.value += derivative * derivative;
     }
 
     // Normalize energies
-    lowEnergy = Math.sqrt(lowEnergy / actualLen);
-    highEnergy = Math.sqrt(highEnergy / actualLen);
+    lowEnergy.value = Math.sqrt(lowEnergy.value / actualLen);
+    highEnergy.value = Math.sqrt(highEnergy.value / actualLen);
 
-    const totalEnergy = lowEnergy + highEnergy;
-    if (totalEnergy < 0.001) return 0.5; // Silence
+    const totalEnergy = ref(lowEnergy.value + highEnergy.value);
+    if (totalEnergy.value < 0.001) return midFreq.value; // Silence
 
     // Ratio of high to total energy indicates frequency content
     // More high energy = higher frequencies
-    const highRatio = highEnergy / totalEnergy;
+    const highRatio = highEnergy.value / totalEnergy.value;
 
     // Map to 0-1 range with enhanced contrast
-    return clamp(highRatio * 3, 0, 1);
+    const contrastMultiplier = ref(3);
+    return clamp(highRatio * contrastMultiplier.value, 0, 1);
 }
 
 const getPlaybackTimeSeconds = () => {
@@ -467,7 +490,7 @@ const buildOneCorridorFrame = (frameIndex: number) => {
         const normalizedAmp = clamp(amplitude, 0, 1);
 
         // Analyze frequency content in a small window around this sample
-        const analysisWindow = 512; // Window for frequency analysis
+        const analysisWindow = getAnalysisWindowSize();
         const windowStart = Math.max(0, i - analysisWindow / 2);
 
         // Analyze both channels and average
@@ -684,7 +707,8 @@ onUnmounted(() => {
         <ProseH1>Serpentoscope</ProseH1>
         <ProseH2>Where Sound Draws Coils Through Explorable Space (prototype) WIP</ProseH2>
 
-        <div class="flex flex-wrap items-center border-accessible-blue w-full rounded-md border-1 py-3 px-5 mb-6">
+        <ProseH3>Playback controls</ProseH3>
+        <div class="flex flex-wrap items-center gap-2 border-accessible-blue w-full rounded-md border-1 py-3 px-5 mb-6">
             <input id="file" type="file" accept="audio/wav" class="hidden" @change="handleFileChange" />
 
             <UButton as="label" for="file" color="primary" size="lg" leading-icon="i-heroicons-arrow-up-tray">
@@ -700,38 +724,75 @@ onUnmounted(() => {
                 @click="stopAllAudio">
                 Stop
             </UButton>
-
-            <UButton color="neutral" variant="outline" size="lg"
-                :leading-icon="isFullscreen ? 'i-heroicons-arrows-pointing-in' : 'i-heroicons-arrows-pointing-out'"
-                @click="toggleFullscreen">
-                {{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
-            </UButton>
         </div>
 
-        <div class="w-full mb-6 px-5 space-y-4">
-            <div>
-                <label class="block text-sm font-medium mb-2">
-                    Points Per Frame: {{ corridorMeta.pointsPerFrame }}
-                </label>
-                <USlider v-model="corridorMeta.pointsPerFrame" :min="32" :max="512" :step="32"
-                    :disabled="audio.started" />
-            </div>
+        <ProseH3>Display controls</ProseH3>
+        <div class="border-accessible-blue w-full border-1 rounded-md py-4 px-6 mb-6">
+            <div class="flex gap-16">
+                <!-- Left Column -->
+                <div class="flex-1 space-y-4">
+                    <div class="mb-6">
+                        <label class="block font-bold text-primary text-lg mb-2">
+                            Points Per Frame: <span class="text-secondary">{{ corridorMeta.pointsPerFrame }}</span>
+                        </label>
+                        <USlider v-model="corridorMeta.pointsPerFrame" :min="32" :max="512" :step="32"
+                            :ui="{ thumb: 'bg-primary' }" :disabled="audio.started" />
+                    </div>
+                    <USeparator class="py-2" />
+                    <div class="mb-6">
+                        <URadioGroup v-model="useLineMode" legend="Render Mode" size="xl" :items="[
+                            { label: 'Points', value: false },
+                            { label: 'Lines', value: true }
+                        ]" :ui="{ legend: 'text-lg text-primary font-bold', label: 'text-primary' }" value-key="value"
+                            orientation="horizontal" :disabled="audio.started" />
+                    </div>
+                    <USeparator class="py-2" />
+                    <div class="flex items-center gap-3 mb-2">
+                        <UCheckbox v-model="oscillationEnabled" id="oscillation-toggle" />
+                        <label for="oscillation-toggle" class="text-primary text-lg font-bold cursor-pointer">
+                            Enable Point Oscillation
+                        </label>
+                    </div>
+                </div>
 
-            <div>
-                <URadioGroup v-model="useLineMode" legend="Render Mode" :items="[
-                    { label: 'Points', value: false },
-                    { label: 'Lines', value: true }
-                ]" value-key="value" orientation="horizontal" :disabled="audio.started" />
-            </div>
-
-            <div class="flex items-center gap-3">
-                <UCheckbox v-model="oscillationEnabled" id="oscillation-toggle" />
-                <label for="oscillation-toggle" class="text-sm font-medium cursor-pointer">
-                    Enable Point Oscillation
-                </label>
+                <!-- Right Column -->
+                <div class="flex-1 space-y-4">
+                    <div>
+                        <URadioGroup v-model="frequencyResolution" legend="Frequency Analysis Resolution" size="xl"
+                            :items="[
+                                {
+                                    label: 'Hi-Res',
+                                    value: 'spectral',
+                                    help: 'Detailed frequency analysis. Best for sustained tones, classical and ambient.'
+                                },
+                                {
+                                    label: 'Mid',
+                                    value: 'balanced',
+                                    help: 'Balanced time/frequency resolution. Good for most music genres.'
+                                },
+                                {
+                                    label: 'Lo-Res',
+                                    value: 'temporal',
+                                    help: 'Fast response to changes. Best for percussion and electronic.'
+                                }
+                            ]" :ui="{ legend: 'text-lg text-primary font-bold', label: 'text-primary' }"
+                            value-key="value" :disabled="audio.started">
+                            <template #label="{ item }">
+                                <div class="flex flex-col gap-1">
+                                    <span class="font-bold text-primary">{{ item.label }}</span>
+                                    <span class="text-sm text-primary dark:text-gray-400">{{ item.help }}</span>
+                                </div>
+                            </template>
+                        </URadioGroup>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="rounded-lg w-full h-[600px] bg-black" ref="canvasContainer"></div>
+        <div class="relative rounded-lg w-full h-[600px] bg-black" ref="canvasContainer">
+            <UButton class="absolute top-4 right-4 z-10" color="primary" variant="solid" size="xl"
+                :icon="isFullscreen ? 'i-heroicons-arrows-pointing-in' : 'i-heroicons-arrows-pointing-out'"
+                @click="toggleFullscreen" :aria-label="isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'" />
+        </div>
     </div>
 </template>

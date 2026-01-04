@@ -9,8 +9,14 @@ export default defineAppConfig({
       h2: {
         slots: {
           base: [
-            "relative text-2xl text-secondary font-bold mt-0 mb-6 scroll-mt-[calc(48px+45px+var(--ui-header-height))] lg:scroll-mt-[calc(48px+var(--ui-header-height))] [&>a]:focus-visible:outline-primary [&>a>code]:border-dashed hover:[&>a>code]:border-primary hover:[&>a>code]:text-primary [&>a>code]:text-xl/7 [&>a>code]:font-bold",
-            "[&>a>code]:transition-colors",
+            "text-2xl text-secondary font-bold mt-0 mb-6 scroll-mt-[calc(48px+45px+var(--ui-header-height))] lg:scroll-mt-[calc(48px+var(--ui-header-height))]",
+          ],
+        },
+      },
+      h3: {
+        slots: {
+          base: [
+            "text-primary font-bold mt-0  scroll-mt-[calc(48px+45px+var(--ui-header-height))] lg:scroll-mt-[calc(48px+var(--ui-header-height))]",
           ],
         },
       },
