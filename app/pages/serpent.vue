@@ -23,6 +23,13 @@ let controls: PointerLockControls;
 const canvasContainer = ref<HTMLDivElement | null>(null);
 const isFullscreen = ref(false);
 
+let requestAnimFrame: number | null = null;
+
+const onFullscreenChange = () => {
+    isFullscreen.value = !!document.fullscreenElement;
+    updateRendererSize();
+};
+
 const updateRendererSize = () => {
     if (!canvasContainer.value || !renderer || !camera) return;
 
@@ -391,6 +398,7 @@ const stopWavOnly = () => {
 
 const stopAllAudio = () => {
     stopWavOnly();
+    audio.started = false;
 }
 
 const startAudio = async () => {
@@ -405,9 +413,11 @@ const startAudio = async () => {
 // Analyze frequency content using derivative energy (rate of change)
 // High frequencies change rapidly, low frequencies change slowly
 const analyzeFrequencyBand = (data: Float32Array, startIdx: number, windowLen: number) => {
+    // Ensure integer indices to avoid fractional array access (e.g. data[123.5])
+    const safeStartIdx = Math.max(0, Math.floor(startIdx));
     const minSamples = ref(8)
-    const endIdx = Math.min(startIdx + windowLen, data.length);
-    const actualLen = endIdx - startIdx;
+    const endIdx = Math.min(safeStartIdx + windowLen, data.length);
+    const actualLen = endIdx - safeStartIdx;
     const midFreq = 0.5
     if (actualLen < minSamples.value) return midFreq;
 
@@ -415,7 +425,7 @@ const analyzeFrequencyBand = (data: Float32Array, startIdx: number, windowLen: n
     let highEnergy = ref(0);  // Energy in the derivative (fast changes)
 
     // Calculate energy in signal and its derivative
-    for (let i = startIdx; i < endIdx - 1; i++) {
+    for (let i = safeStartIdx; i < endIdx - 1; i++) {
         const sample = data[i] ?? 0;
         const nextSample = data[i + 1] ?? 0;
         const derivative = nextSample - sample; // Rate of change
@@ -598,7 +608,7 @@ const oscillateExistingPoints = (time: number) => {
 
 const updateLiveSnapshotCorridor = () => {
     // Build frames progressively up to the current playback-derived target.
-    if (!snapshotCorridorPoints || !corridorState.value.buffer) return;
+    if (!snapshotCorridorPoints.value || !corridorState.value.buffer) return;
 
     const targetFrame = getTargetFrameForPlayback();
     const remaining = targetFrame - corridorState.value.builtFrames;
@@ -685,7 +695,7 @@ const animate = (now: number) => {
     }
 
     renderer.render(scene, camera);
-    requestAnimationFrame(animate);
+    requestAnimFrame = requestAnimationFrame(animate);
 }
 
 // Watch for render mode changes and update visibility
@@ -700,20 +710,27 @@ watch(useLineMode, (newValue) => {
 
 onMounted(() => {
     initaliseScene();
-    requestAnimationFrame(animate);
+    requestAnimFrame = requestAnimationFrame(animate);
 
     // Handle window resize
     window.addEventListener('resize', updateRendererSize);
 
     // Handle fullscreen change (e.g., ESC key)
-    document.addEventListener('fullscreenchange', () => {
-        isFullscreen.value = !!document.fullscreenElement;
-        updateRendererSize();
-    });
+    document.addEventListener('fullscreenchange', onFullscreenChange);
 });
 
 onUnmounted(() => {
+
+    if (requestAnimFrame !== null) {
+        cancelAnimationFrame(requestAnimFrame);
+        requestAnimFrame = null;
+    }
+
     window.removeEventListener('resize', updateRendererSize);
+    document.removeEventListener('fullscreenchange', onFullscreenChange);
+
+    stopAllAudio();
+    clearCorridor();
 });
 
 </script>
